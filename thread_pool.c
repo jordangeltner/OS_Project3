@@ -20,6 +20,7 @@
 typedef struct {
     void (*function)(void *);
     void *argument;
+    // void *next; //Used to link up queue
 } pool_task_t;
 
 
@@ -28,6 +29,9 @@ struct pool_t {
   pthread_cond_t notify;
   pthread_t *threads;
   pool_task_t *queue;
+  //pool_task_t *standbylist; //The standby list
+  //bool trystandbylist; //bool that indicates whether or not we need to try tasks 
+  						// from the standby list
   int thread_count;
   int task_queue_size_limit;
 };

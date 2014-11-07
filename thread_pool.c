@@ -16,16 +16,19 @@
 
 #define MAX_THREADS 20
 #define STANDBY_SIZE 8
+#define NUM_SEATS 20 //CHECK WITH PIAZZA
 
 typedef struct {
     void (*function)(void *);
     void *argument;
-    // void *next; //Used to link up queue
+    int connfd;
+    void *next; //Used to link up queue
 } pool_task_t;
 
 
 struct pool_t {
-  pthread_mutex_t lock;
+  pthread_mutex_t queue_lock; //protects the worker queue
+  pthread_mutex_t seat_locks[NUM_SEATS];
   pthread_cond_t notify;
   pthread_t *threads;
   pool_task_t *queue;
@@ -45,6 +48,7 @@ static void *thread_do_work(void *pool);
  */
 pool_t *pool_create(int queue_size, int num_threads)
 {
+	
     return NULL;
 }
 
@@ -81,9 +85,10 @@ int pool_destroy(pool_t *pool)
  */
 static void *thread_do_work(void *pool)
 { 
-
+	pool_t* p = (pool_t*)pool;
     while(1) {
-        
+    	pthread_cond_wait(&p->notify,&p->queue_lock); //Release and acquire lock
+    	handle_connection(&p->queue->connfd);
     }
 
     pthread_exit(NULL);

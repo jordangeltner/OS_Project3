@@ -17,6 +17,7 @@
 
 #define BUFSIZE 1024
 #define FILENAMESIZE 100
+#define TASK_QUEUE_LIMIT 60   //What is the best value here?
 
 void shutdown_server(int);
 
@@ -39,6 +40,11 @@ int main(int argc,char *argv[])
     {
         num_seats = atoi(argv[1]);
     } 
+    int i;
+//     FILE *ofp;
+//     char outputFileName[] = "out.list";
+//     ofp = fopen(outputFileName,"w");
+//    for (i=0;i<argc;i++){ printf("arg[%d]: %s\n",i,argv[i]); fflush(stdout); }
 
     if (server_port < 1500)
     {
@@ -64,7 +70,7 @@ int main(int argc,char *argv[])
 
 
     // Load the seats;
-    load_seats(num_seats); //TODO read from argv
+    load_seats(num_seats);
 
     // set server address 
     memset(&serv_addr, '0', sizeof(serv_addr));
@@ -86,10 +92,20 @@ int main(int argc,char *argv[])
     // handle connections loop (forever)
     while(1)
     {
-        connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-        
-        // single threaded
-        handle_connection(&connfd);
+		connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
+		//LOCK THE QUEUE
+		// single threaded
+		//handle_connection(&connfd);
+
+		// multi threaded
+		//add connection to pool queue
+		pool_task_t* task = malloc(sizeof(pool_task_t));
+		task->connfd = connfd;
+		task->function = NULL;
+		task->argument = NULL;
+		task->next = (void*)threadpool->queue;
+		threadpool->queue = task;
+		//UNLOCK THE QUEUE
     }
 }
 

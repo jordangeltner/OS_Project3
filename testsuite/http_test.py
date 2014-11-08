@@ -195,6 +195,13 @@ if __name__ == '__main__':
 
     config, traces = parse_trace(tracefile)
     
+#     #REMOVEEEE
+#     for i in range(len(traces)):
+#     	traces[i].append('"');
+#     	traces[i].reverse();
+#     	traces[i].append('"');
+#     	traces[i].reverse();
+    
     print 'Running Trace: %s' % tracefile
     run_trace(config, traces, host, port)
     

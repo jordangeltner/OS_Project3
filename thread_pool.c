@@ -86,11 +86,15 @@ int pool_add_task(pool_t *pool, int connfd)
     //LOCK THE QUEUE
 	// single threaded
 	//handle_connection(&connfd);
+	LINE; fflush(stdout);
 	pthread_mutex_lock(&pool->queue_lock);
+	LINE; fflush(stdout);
 	// multi threaded
 	//add connection to pool queue
 	pool_task_t* task = (pool_task_t*)malloc(sizeof(pool_task_t));
 	task->connfd = connfd;
+// 	printf("connfd_seat: %d\n",seat_connection(&connfd)); fflush(stdout);
+// 	printf("task_seat: %d\n",seat_connection(&task->connfd)); fflush(stdout);
 	task->seat_id = -1;
 	task->next = (void*)pool->queue;
 	pool->queue = task;
@@ -152,6 +156,8 @@ static void *thread_do_work(void *pool)
     	pthread_mutex_lock(&p->try_sblock);
     	if(p->trystandbylist==1){
     		p->trystandbylist = 0;
+    		pthread_mutex_unlock(&p->try_sblock);
+    		printf("IN STANDBY LIST\n"); fflush(stdout);
     		pthread_cond_wait(&p->sbnotify,&p->sblock);
     		pool_task_t* prev = NULL;
     		pool_task_t* curr = p->standbylist;
@@ -170,14 +176,14 @@ static void *thread_do_work(void *pool)
     			prev = curr;
     			curr = curr->next;
     		}
-    		p->trystandbylist = 0;
-    		pthread_mutex_unlock(&p->try_sblock);
+    		
     	}
     	else{
     		pthread_mutex_unlock(&p->try_sblock);
 			pthread_cond_wait(&p->notify,&p->queue_lock); //Release and acquire lock
 		//	printf("About to handle connection\n"); fflush(stdout);
 			handle_connection(&p->queue->connfd,p);
+			//pthread_mutex_unlock(&p->queue_lock);
 		}
 		printf("Handled connection\n"); fflush(stdout);
     }

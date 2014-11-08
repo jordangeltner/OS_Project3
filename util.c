@@ -23,6 +23,7 @@ int get_line(int, char*,int);
 
 int parse_int_arg(char* filename, char* arg);
 
+static int last_user = 0;
 void handle_connection(int* connfd_ptr, pool_t* p)
 {
     int connfd = *(connfd_ptr);
@@ -128,14 +129,17 @@ void handle_connection(int* connfd_ptr, pool_t* p)
 
     strncpy(resource, file, length);
     resource[length] = 0;
-    
     int seat_id = parse_int_arg(file, "seat=");
     int user_id = parse_int_arg(file, "user=");
+    if(user_id == -1){ user_id = last_user; }
+    last_user = user_id;
     int customer_priority = parse_int_arg(file, "priority=");
     LINE;
+    printf("seat=%d\n",seat_id); fflush(stdout);
     // Check if the request is for one of our operations
     if (strncmp(resource, "list_seats", length) == 0)
     {  
+    	printf("List seats\n"); fflush(stdout);
         list_seats(buf, BUFSIZE);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
@@ -145,6 +149,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     } 
     else if(strncmp(resource, "view_seat", length) == 0)
     {	
+    	printf("View seat: %d\n", seat_id); fflush(stdout);
     	LINE;
     	pthread_mutex_lock(&p->seat_locks[seat_id]);
     	LINE;
@@ -160,7 +165,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     	}
     	//there are available seats
     	else{
-    		printf("Viewing seat %d\n",seat_id);
+    		printf("Viewing seat %d\n",seat_id); fflush(stdout);
 			view_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
 			// send headers
 			writenbytes(connfd, ok_response, strlen(ok_response));
@@ -174,6 +179,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     } 
     else if(strncmp(resource, "confirm", length) == 0)
     {
+    	printf("Confirm seat: %d\n", seat_id); fflush(stdout);
     	pthread_mutex_lock(&p->seat_locks[seat_id]);
         confirm_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
         // send headers
@@ -185,6 +191,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     }
     else if(strncmp(resource, "cancel", length) == 0)
     {
+    	printf("Cancel seat: %d\n", seat_id); fflush(stdout);
     	pthread_mutex_lock(&p->seat_locks[seat_id]);
     	pthread_mutex_lock(&p->cancellock);
     	pthread_mutex_lock(&p->try_sblock);
@@ -197,12 +204,15 @@ void handle_connection(int* connfd_ptr, pool_t* p)
         p->trystandbylist = 1;
         p->queue = p->queue->next;
         sem_post(p->seatsem,p);
+        
         pthread_mutex_unlock(&p->try_sblock);
+        pthread_mutex_unlock(&p->queue_lock);
         pthread_mutex_unlock(&p->cancellock);
         pthread_mutex_unlock(&p->seat_locks[seat_id]);
     }
     else
     {
+    	printf("OPENING FILE: %s\n", resource); fflush(stdout);
         // try to open the file
         if ((fd = open(resource, O_RDONLY)) == -1)
         {
@@ -326,5 +336,5 @@ int parse_int_arg(char* filename, char* arg)
             }
         }
     }
-    return seatnum;
+    return (seatnum==0) ? -1 : seatnum;
 }

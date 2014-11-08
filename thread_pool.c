@@ -31,7 +31,14 @@ pool_t *pool_create(int queue_size, int num_threads)
 {
 	pool_t* p = malloc(sizeof(pool_t));
 	p->active = 1;
+	p->last_cancelled = -1;
 	pthread_mutex_t q;
+	pthread_mutex_t c;
+	pthread_mutex_init(&c,NULL);
+	p->cancellock = c;
+	pthread_mutex_t d;
+	pthread_mutex_init(&d,NULL);
+	p->try_sblock = d;
 	int i;
 	pthread_t threads[num_threads];
 	pthread_mutex_init(&q,NULL);
@@ -56,6 +63,9 @@ pool_t *pool_create(int queue_size, int num_threads)
 	m_sem_t* sbsem = malloc(sizeof(m_sem_t));
 	sbsem->value = STANDBY_SIZE;
 	p->sbsem = sbsem;
+	m_sem_t* seatsem = malloc(sizeof(m_sem_t));
+	seatsem->value = 20;
+	p->seatsem = seatsem;
 	p->thread_count = num_threads;
 	p->task_queue_size_limit = queue_size;
 	for (i=0;i<num_threads;i++){
@@ -81,8 +91,7 @@ int pool_add_task(pool_t *pool, int connfd)
 	//add connection to pool queue
 	pool_task_t* task = (pool_task_t*)malloc(sizeof(pool_task_t));
 	task->connfd = connfd;
-	task->function = NULL;
-	task->argument = NULL;
+	task->seat_id = -1;
 	task->next = (void*)pool->queue;
 	pool->queue = task;
 	//UNLOCK THE QUEUE
@@ -109,7 +118,10 @@ int pool_destroy(pool_t *pool)
  	err+= pthread_cond_destroy(&pool->notify);
  	err+= pthread_cond_destroy(&pool->sbnotify);
  	err+= pthread_mutex_destroy(&pool->sblock);
+ 	err+= pthread_mutex_destroy(&pool->cancellock);
+ 	err+= pthread_mutex_destroy(&pool->try_sblock);
  	free(pool->sbsem);
+ 	free(pool->seatsem);
  	pool_task_t* q = pool->queue;
  	while(q!=NULL){
  		pool_task_t* curr = q;
@@ -136,10 +148,38 @@ static void *thread_do_work(void *pool)
 { 
 	pool_t* p = (pool_t*)pool;
     while(p->active ==1) {
-    	pthread_cond_wait(&p->notify,&p->queue_lock); //Release and acquire lock
-    //	printf("About to handle connection\n"); fflush(stdout);
-    	handle_connection(&p->queue->connfd,p);
-    	printf("Handled connection\n"); fflush(stdout);
+    	//need to try standby list, because someone just cancelled
+    	pthread_mutex_lock(&p->try_sblock);
+    	if(p->trystandbylist==1){
+    		p->trystandbylist = 0;
+    		pthread_cond_wait(&p->sbnotify,&p->sblock);
+    		pool_task_t* prev = NULL;
+    		pool_task_t* curr = p->standbylist;
+    		while(curr!=NULL){
+    			if(curr->seat_id==p->last_cancelled){
+    				handle_connection(&curr->connfd,p);
+    				if(prev==NULL){
+    					p->standbylist = curr->next;
+    				}
+    				else{
+    					prev->next = curr->next;
+    				}
+    				sem_post(p->sbsem,p);
+    				pthread_mutex_unlock(&p->sblock);
+    			}
+    			prev = curr;
+    			curr = curr->next;
+    		}
+    		p->trystandbylist = 0;
+    		pthread_mutex_unlock(&p->try_sblock);
+    	}
+    	else{
+    		pthread_mutex_unlock(&p->try_sblock);
+			pthread_cond_wait(&p->notify,&p->queue_lock); //Release and acquire lock
+		//	printf("About to handle connection\n"); fflush(stdout);
+			handle_connection(&p->queue->connfd,p);
+		}
+		printf("Handled connection\n"); fflush(stdout);
     }
     pthread_exit(NULL);
     return(NULL);

@@ -4,23 +4,23 @@
 
 #include "util.h"
 
-int sem_wait(m_sem_t *s, pthread_cond_t sbnotify, pthread_mutex_t sblock);
-int sem_post(m_sem_t *s, pthread_cond_t sbnotify);
-
-int sem_wait(m_sem_t *s, pthread_cond_t sbnotify, pthread_mutex_t sblock)
+int sem_wait(m_sem_t *s)
 {
-    s->value--; //make sure these don't overlap
-    if(s->value<0){
-    	pthread_cond_wait(&sbnotify,&sblock);
+   
+    if(s->value>0){
+    	s->value--;
+    	return 0;
     }
-    return 0;
+    else{
+    	return -1;
+    }
 }
 
-int sem_post(m_sem_t *s, pthread_cond_t sbnotify)
+int sem_post(m_sem_t *s, pool_t* p)
 {
-    s->value++; //make sure these don't overlap
+    s->value++;
     if(s->value<=0){
-    	pthread_cond_signal(&sbnotify);
+    	pthread_cond_signal(&p->sbnotify);
     }
     return 0;
 }

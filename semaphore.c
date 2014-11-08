@@ -16,12 +16,16 @@ int sem_wait(m_sem_t *s)
     }
 }
 
-int sem_post(m_sem_t *s, pool_t* p)
+int sem_post(m_sem_t *s, pool_t* p, int notify)
 {
 	printf("SEM_POST: %d\n",s->value); fflush(stdout);
     s->value++;
-    if(s->value<=0){
+    if(notify==0){
     	pthread_cond_signal(&p->sbnotify);
     }
+//     if(s->value<=0){
+//     	if(notify
+//     	pthread_cond_signal(&p->sbnotify);
+//     }
     return 0;
 }

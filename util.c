@@ -136,6 +136,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     int customer_priority = parse_int_arg(file, "priority=");
     LINE;
     printf("seat=%d\n",seat_id); fflush(stdout);
+    if(seat_id >=20){return;}
     // Check if the request is for one of our operations
     if (strncmp(resource, "list_seats", length) == 0)
     {  
@@ -157,6 +158,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     	if(sem_wait(p->seatsem)==-1 && sem_wait(p->sbsem)==0){
     		LINE;
     		pthread_mutex_lock(&p->sblock);
+    		LINE;
     		pool_task_t* task = p->queue;
     		p->queue = p->queue->next;
     		task->next = p->standbylist;
@@ -175,6 +177,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
 				p->queue = p->queue->next;
 			}
 		}
+		pthread_mutex_unlock(&p->sblock);
 		pthread_mutex_unlock(&p->seat_locks[seat_id]);
     } 
     else if(strncmp(resource, "confirm", length) == 0)
@@ -203,7 +206,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
         p->last_cancelled = seat_id;
         p->trystandbylist = 1;
         p->queue = p->queue->next;
-        sem_post(p->seatsem,p);
+        sem_post(p->seatsem,p,0);
         
         pthread_mutex_unlock(&p->try_sblock);
         pthread_mutex_unlock(&p->queue_lock);

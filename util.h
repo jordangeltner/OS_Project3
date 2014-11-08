@@ -42,7 +42,7 @@ typedef struct pool_t {
 //int seat_connection(int*);
 void handle_connection(int*,pool_t*);
 int sem_wait(m_sem_t *s);
-int sem_post(m_sem_t *s, pool_t* p);
+int sem_post(m_sem_t *s, pool_t* p, int notify);
 
 
 

@@ -155,6 +155,7 @@ static void *thread_do_work(void *pool)
     	//need to try standby list, because someone just cancelled
     	pthread_mutex_lock(&p->try_sblock);
     	if(p->trystandbylist==1){
+    		pthread_mutex_unlock(&p->queue_lock);
     		p->trystandbylist = 0;
     		pthread_mutex_unlock(&p->try_sblock);
     		printf("IN STANDBY LIST\n"); fflush(stdout);
@@ -170,12 +171,13 @@ static void *thread_do_work(void *pool)
     				else{
     					prev->next = curr->next;
     				}
-    				sem_post(p->sbsem,p);
+    				sem_post(p->sbsem,p,1);
     				pthread_mutex_unlock(&p->sblock);
     			}
     			prev = curr;
     			curr = curr->next;
     		}
+    		pthread_mutex_unlock(&p->sblock);
     		
     	}
     	else{

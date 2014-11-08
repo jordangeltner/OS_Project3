@@ -11,7 +11,8 @@
 #include <stdbool.h>
 #include <errno.h>
 
-
+#include "util.h"
+#include "thread_pool.h"
 #include "seats.h"
 
 #define BUFSIZE 1024
@@ -22,7 +23,7 @@ int get_line(int, char*,int);
 
 int parse_int_arg(char* filename, char* arg);
 
-void handle_connection(int* connfd_ptr)
+void handle_connection(int* connfd_ptr, pool_t* p)
 {
     int connfd = *(connfd_ptr);
 
@@ -137,27 +138,33 @@ void handle_connection(int* connfd_ptr)
     } 
     else if(strncmp(resource, "view_seat", length) == 0)
     {
+    	pthread_mutex_lock(&p->seat_locks[seat_id]);
         view_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
+        pthread_mutex_unlock(&p->seat_locks[seat_id]);
     } 
     else if(strncmp(resource, "confirm", length) == 0)
     {
+    	pthread_mutex_lock(&p->seat_locks[seat_id]);
         confirm_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
+        pthread_mutex_unlock(&p->seat_locks[seat_id]);
     }
     else if(strncmp(resource, "cancel", length) == 0)
     {
+    	pthread_mutex_lock(&p->seat_locks[seat_id]);
         cancel(buf, BUFSIZE, seat_id, user_id, customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
+        pthread_mutex_unlock(&p->seat_locks[seat_id]);
     }
     else
     {

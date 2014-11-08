@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include "thread_pool.h"
+#include "util.h"
 
 /**
  *  @struct threadpool_task
@@ -16,28 +17,7 @@
 
 #define MAX_THREADS 20
 #define STANDBY_SIZE 8
-#define NUM_SEATS 20 //CHECK WITH PIAZZA
 
-typedef struct {
-    void (*function)(void *);
-    void *argument;
-    int connfd;
-    void *next; //Used to link up queue
-} pool_task_t;
-
-
-struct pool_t {
-  pthread_mutex_t queue_lock; //protects the worker queue
-  pthread_mutex_t seat_locks[NUM_SEATS];
-  pthread_cond_t notify;
-  pthread_t *threads;
-  pool_task_t *queue;
-  //pool_task_t *standbylist; //The standby list
-  //bool trystandbylist; //bool that indicates whether or not we need to try tasks 
-  						// from the standby list
-  int thread_count;
-  int task_queue_size_limit;
-};
 
 static void *thread_do_work(void *pool);
 
@@ -48,8 +28,30 @@ static void *thread_do_work(void *pool);
  */
 pool_t *pool_create(int queue_size, int num_threads)
 {
-	
-    return NULL;
+	pool_t* p = malloc(sizeof(pool_t));
+	p->active = 1;
+	pthread_mutex_t q;
+	p->queue_lock = q;
+	int i;
+	pthread_t threads[num_threads];
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	for(i=0;i<20;i++){
+		pthread_mutex_t s;
+		p->seat_locks[i] = s; 
+	}
+	pthread_cond_t notify;
+	p->notify = notify;
+	p->queue = NULL;
+	p->standbylist = NULL;
+	p->trystandbylist = 0;
+	p->thread_count = num_threads;
+	p->task_queue_size_limit = queue_size;
+	for (i=0;i<num_threads;i++){
+		pthread_create(&threads[i],&attr,thread_do_work,&p);
+	}
+	p->threads = threads;
+    return p;
 }
 
 
@@ -57,10 +59,25 @@ pool_t *pool_create(int queue_size, int num_threads)
  * Add a task to the threadpool
  *
  */
-int pool_add_task(pool_t *pool, void (*function)(void *), void *argument)
+int pool_add_task(pool_t *pool, int connfd)
 {
     int err = 0;
-        
+    //LOCK THE QUEUE
+	// single threaded
+	//handle_connection(&connfd);
+	pthread_mutex_lock(&pool->queue_lock);
+	// multi threaded
+	//add connection to pool queue
+	pool_task_t* task = (pool_task_t*)malloc(sizeof(pool_task_t));
+	task->connfd = connfd;
+	task->function = NULL;
+	task->argument = NULL;
+	task->next = (void*)pool->queue;
+	pool->queue = task;
+	//Signal the waiting thread
+	pthread_cond_signal(&pool->notify);
+	//UNLOCK THE QUEUE
+	pthread_mutex_unlock(&pool->queue_lock);
     return err;
 }
 
@@ -73,7 +90,25 @@ int pool_add_task(pool_t *pool, void (*function)(void *), void *argument)
 int pool_destroy(pool_t *pool)
 {
     int err = 0;
- 
+ 	err+=pthread_mutex_destroy(&pool->queue_lock);
+ 	int i;
+ 	for(i=0;i<20;i++){
+ 		err+=pthread_mutex_destroy(&pool->seat_locks[i]);
+ 	}
+ 	err+= pthread_cond_destroy(&pool->notify);
+ 	pool_task_t* q = pool->queue;
+ 	while(q!=NULL){
+ 		pool_task_t* curr = q;
+ 		q = q->next;
+ 		free(curr);
+ 	}
+ 	q = pool->standbylist;
+ 	while(q!=NULL){
+ 		pool_task_t* curr = q;
+ 		q = q->next;
+ 		free(curr);
+ 	}
+ 	pool->active = 0; //forces every thread to pthread_exit from thread_do_work
     return err;
 }
 
@@ -86,11 +121,10 @@ int pool_destroy(pool_t *pool)
 static void *thread_do_work(void *pool)
 { 
 	pool_t* p = (pool_t*)pool;
-    while(1) {
+    while(p->active ==1) {
     	pthread_cond_wait(&p->notify,&p->queue_lock); //Release and acquire lock
-    	handle_connection(&p->queue->connfd);
+    	handle_connection(&p->queue->connfd,p);
     }
-
     pthread_exit(NULL);
     return(NULL);
 }

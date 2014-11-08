@@ -23,7 +23,6 @@ void shutdown_server(int);
 
 int listenfd;
 pool_t* threadpool;
-
 int main(int argc,char *argv[])
 {
     int flag, num_seats = 20;
@@ -40,7 +39,7 @@ int main(int argc,char *argv[])
     {
         num_seats = atoi(argv[1]);
     } 
-    int i;
+ //   int i;
 //     FILE *ofp;
 //     char outputFileName[] = "out.list";
 //     ofp = fopen(outputFileName,"w");
@@ -66,7 +65,7 @@ int main(int argc,char *argv[])
 
     // initialize the threadpool
     // Set the number of threads and size of the queue
-    threadpool = pool_create(0,0);
+    threadpool = pool_create(60,20);
 
 
     // Load the seats;
@@ -93,19 +92,7 @@ int main(int argc,char *argv[])
     while(1)
     {
 		connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-		//LOCK THE QUEUE
-		// single threaded
-		//handle_connection(&connfd);
-
-		// multi threaded
-		//add connection to pool queue
-		pool_task_t* task = malloc(sizeof(pool_task_t));
-		task->connfd = connfd;
-		task->function = NULL;
-		task->argument = NULL;
-		task->next = (void*)threadpool->queue;
-		threadpool->queue = task;
-		//UNLOCK THE QUEUE
+		pool_add_task(threadpool,connfd);
     }
 }
 

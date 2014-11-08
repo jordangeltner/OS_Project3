@@ -92,7 +92,9 @@ int main(int argc,char *argv[])
     while(1)
     {
 		connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
+		printf("Adding task\n"); fflush(stdout);
 		pool_add_task(threadpool,connfd);
+		printf("Added task\n"); fflush(stdout);
     }
 }
 

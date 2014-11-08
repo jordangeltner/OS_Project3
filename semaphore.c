@@ -2,10 +2,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-
-typedef struct m_sem_t {
-    int value;
-} m_sem_t;
+#include "util.h"
 
 int sem_wait(m_sem_t *s, pthread_cond_t sbnotify, pthread_mutex_t sblock);
 int sem_post(m_sem_t *s, pthread_cond_t sbnotify);

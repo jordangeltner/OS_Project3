@@ -15,7 +15,7 @@
 #include "thread_pool.h"
 #include "seats.h"
 
-#define BUFSIZE 1024
+#define BUFSIZE 8192
 
 int writenbytes(int,char *,int);
 int readnbytes(int,char *,int);
@@ -24,15 +24,15 @@ int get_line(int, char*,int);
 int parse_int_arg(char* filename, char* arg);
 
 static int last_user = 0;
-void handle_connection(int* connfd_ptr, pool_t* p)
+void handle_connection(int* connfd_ptr, pool_t* p, int owseatid)
 {
+	LINE;
     int connfd = *(connfd_ptr);
 	int standby = 0;
 	//remove from standby list or queue?
-	pool_task_t* current = p->standbylist;
-	while(current!=NULL){
-		if(current->connfd == connfd){ standby=1;}
-		current = current->next;
+	if(owseatid!=-1){
+		standby = 1;
+		LINE;
 	}
     int fd;
     char buf[BUFSIZE+1];
@@ -66,9 +66,9 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     // get headers
 
     //Expection Format: 'GET filenane.txt HTTP/1.X'
-    
+    LINE;
     get_line(connfd, buf, BUFSIZE);
-    
+    LINE;
     //parse out instruction
     while( !isspace(buf[j]) && (i < sizeof(instr) - 1))
     {
@@ -126,7 +126,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     if (length > strlen(file)) {
       length = strlen(file);
     }
-
+	LINE;
     strncpy(resource, file, length);
     resource[length] = 0;
     int seat_id = parse_int_arg(file, "seat=");
@@ -135,8 +135,12 @@ void handle_connection(int* connfd_ptr, pool_t* p)
     last_user = user_id;
     int customer_priority = parse_int_arg(file, "priority=");
     LINE;
+    if(owseatid!=-1){ seat_id = owseatid;}
     printf("seat=%d\n",seat_id); fflush(stdout);
-    if(seat_id >=20){return;}
+    if(seat_id >=20){LINE; 
+    				//p->queue = p->queue->next;
+    				close(connfd);
+    				return;}
     // Check if the request is for one of our operations
     if (strncmp(resource, "list_seats", length) == 0)
     {  
@@ -146,39 +150,55 @@ void handle_connection(int* connfd_ptr, pool_t* p)
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
-        p->queue = p->queue->next;
     } 
     else if(strncmp(resource, "view_seat", length) == 0)
     {	
     	printf("View seat: %d\n", seat_id); fflush(stdout);
     	LINE;
-    	pthread_mutex_lock(&p->seat_locks[seat_id]);
-    	LINE;
-    	//no available seats and space on standby list
-    	if(sem_wait(p->seatsem)==-1 && sem_wait(p->sbsem)==0){
-    		LINE;
-    		pthread_mutex_lock(&p->sblock);
-    		LINE;
-    		pool_task_t* task = p->queue;
-    		p->queue = p->queue->next;
-    		task->next = p->standbylist;
-    		task->seat_id = seat_id;
-    		p->standbylist = task;
-    	}
     	//there are available seats
-    	else{
+    	if(sem_wait(p->seatsem,&p->seatsem_lock)!=-1){
+    		pthread_mutex_lock(&p->seat_locks[seat_id]);
     		printf("Viewing seat %d\n",seat_id); fflush(stdout);
 			view_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
 			// send headers
 			writenbytes(connfd, ok_response, strlen(ok_response));
 			// send data
 			writenbytes(connfd, buf, strlen(buf));
-			if(standby==0){
-				p->queue = p->queue->next;
-			}
+			pthread_mutex_unlock(&p->seat_locks[seat_id]);
 		}
-		pthread_mutex_unlock(&p->sblock);
-		pthread_mutex_unlock(&p->seat_locks[seat_id]);
+		
+		
+// 		printf("View seat: %d\n", seat_id); fflush(stdout);
+//     	LINE;
+//     	pthread_mutex_lock(&p->seat_locks[seat_id]);
+//     	LINE;
+//     	//no available seats and space on standby list
+//     	if(sem_wait(p->seatsem,&p->seatsem_lock)==-1 && sem_wait(p->sbsem,&p->sbsem_lock)==0){
+//     		LINE;
+//     		pthread_mutex_lock(&p->sblock);
+//     		LINE;
+//     		pool_task_t* task = p->queue;
+//     		p->queue = p->queue->next;
+//     		task->next = p->standbylist;
+//     		task->seat_id = seat_id;
+//     		p->standbylist = task;
+//     		printf("ADDED SEAT: %d to STANDBY LIST\n", seat_id); fflush(stdout);
+//     		//pthread_mutex_unlock(&p->sblock);
+//     	}
+//     	//there are available seats
+//     	else{
+//     		printf("Viewing seat %d\n",seat_id); fflush(stdout);
+// 			view_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
+// 			// send headers
+// 			writenbytes(connfd, ok_response, strlen(ok_response));
+// 			// send data
+// 			writenbytes(connfd, buf, strlen(buf));
+// 			if(standby==0){
+// 				p->queue = p->queue->next;
+// 			}
+// 			//pthread_mutex_unlock(&p->queue_lock);
+// 		}
+// 		pthread_mutex_unlock(&p->seat_locks[seat_id]);
     } 
     else if(strncmp(resource, "confirm", length) == 0)
     {
@@ -189,15 +209,17 @@ void handle_connection(int* connfd_ptr, pool_t* p)
         writenbytes(connfd, ok_response, strlen(ok_response));
         // send data
         writenbytes(connfd, buf, strlen(buf));
-        p->queue = p->queue->next;
         pthread_mutex_unlock(&p->seat_locks[seat_id]);
     }
     else if(strncmp(resource, "cancel", length) == 0)
     {
     	printf("Cancel seat: %d\n", seat_id); fflush(stdout);
-    	pthread_mutex_lock(&p->seat_locks[seat_id]);
-    	pthread_mutex_lock(&p->cancellock);
-    	pthread_mutex_lock(&p->try_sblock);
+    	if(pthread_mutex_lock(&p->seat_locks[seat_id])==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+    	LINE;
+//     	if(pthread_mutex_lock(&p->cancellock)==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+//     	LINE;
+//     	if(pthread_mutex_lock(&p->try_sblock)==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+//         LINE;
         cancel(buf, BUFSIZE, seat_id, user_id, customer_priority);
         // send headers
         writenbytes(connfd, ok_response, strlen(ok_response));
@@ -205,13 +227,13 @@ void handle_connection(int* connfd_ptr, pool_t* p)
         writenbytes(connfd, buf, strlen(buf));
         p->last_cancelled = seat_id;
         p->trystandbylist = 1;
-        p->queue = p->queue->next;
-        sem_post(p->seatsem,p,0);
         
-        pthread_mutex_unlock(&p->try_sblock);
-        pthread_mutex_unlock(&p->queue_lock);
-        pthread_mutex_unlock(&p->cancellock);
+//         pthread_mutex_unlock(&p->try_sblock);
+//         pthread_mutex_unlock(&p->cancellock);
         pthread_mutex_unlock(&p->seat_locks[seat_id]);
+        //pthread_mutex_unlock(&p->queue_lock);
+        //pthread_cond_signal(&p->notify);
+        sem_post(p->seatsem,p,0,&p->seatsem_lock);
     }
     else
     {
@@ -234,6 +256,7 @@ void handle_connection(int* connfd_ptr, pool_t* p)
             close(fd);
         } 
     }
+    printf("%s User:%d, Seat: %d\n", resource, user_id, seat_id); fflush(stdout);
     close(connfd);
 }
 

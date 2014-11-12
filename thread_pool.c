@@ -21,9 +21,6 @@
 
 
 static void *thread_do_work(void *pool);
-static int nooneyet = 0;
-// static int tflag = 1;
-// static int xflag = 0;
 
 /*
  * Create a threadpool, initialize variables, etc
@@ -97,37 +94,18 @@ pool_t *pool_create(int queue_size, int num_threads)
 int pool_add_task(pool_t *pool, int connfd)
 {
     int err = 0;
-//     tflag =1;
-//     nooneyet = 1;
-    //LOCK THE QUEUE
-	// single threaded
-	//handle_connection(&connfd);
-	LINE; fflush(stdout);
- 	//if(nooneyet<=0){nooneyet++; usleep(59);} else{nooneyet--; usleep(77);}
-//	if(pthread_mutex_lock(&pool->queue_lock)==EDEADLK){LINE; printf("DEADLOCKED QUEUE_LOCK\n"); fflush(stdout); exit(EXIT_FAILURE);}
-// 	}
-// 	else{
-// 		pthread_cond_wait(&pool->task_notify,&pool->queue_lock);
-// 	}
-// 	while(xflag==1 && nooneyet == 1){usleep(3);}
-// 	if(nooneyet>=1){
-// 		printf("RELEASING QUEUE LOCK\n"); LINE; fflush(stdout);
-// 		pthread_cond_wait(&pool->task_notify,&pool->queue_lock);
-// 		//while(pthread_mutex_trylock(&pool->queue_lock)!=0){ sleep(10);}
-// 		printf("ACQUIRED QUEUE LOCK\n"); fflush(stdout);
-// 	}
-// 	else{ nooneyet++;}
-	LINE; fflush(stdout);
 	// multi threaded
 	//add connection to pool queue
 	pool_task_t* task = (pool_task_t*)malloc(sizeof(pool_task_t));
+	
+//	load_connection(&connfd,task);
 	task->connfd = connfd;
+//	task->priority = 1;
 	task->seat_id = -1;
 	task->next = NULL;
-// 	printf("connfd_seat: %d\n",seat_connection(&connfd)); fflush(stdout);
-// 	printf("task_seat: %d\n",seat_connection(&task->connfd)); fflush(stdout);
+
 	pthread_mutex_lock(&pool->queue_lock);
- 	printf("ACQUIRED QUEUE LOCK\n"); LINE; fflush(stdout);
+// 	printf("ACQUIRED QUEUE LOCK\n"); LINE; fflush(stdout);
 	pool_task_t* curr = pool->queue;
 	pool_task_t* prev = NULL;
 	while(curr!=NULL){
@@ -144,15 +122,10 @@ int pool_add_task(pool_t *pool, int connfd)
 	//UNLOCK THE QUEUE
 	pthread_mutex_unlock(&pool->queue_lock);
 	//Signal the waiting thread
-	printf("RELEASED QUEUE LOCK\n"); fflush(stdout);
-	LINE;
+//	printf("RELEASED QUEUE LOCK\n"); fflush(stdout);
 	while(sem_wait(pool->sbsem,&pool->sbsem_lock)==-1){usleep(100);}
 	pthread_cond_signal(&pool->notify);
-	
-	
-	
-	
-	
+
     return err;
 }
 
@@ -204,7 +177,6 @@ int pool_destroy(pool_t *pool)
  */
 static void *thread_do_work(void *pool)
 { 
-	int tstr = 0;
 	pool_t* p = (pool_t*)pool;
 	if(pthread_mutex_lock(&p->queue_lock)==EDEADLK){LINE; printf("DEADLOCKED QUEUE_LOCK\n"); fflush(stdout);}
     while(p->active ==1) {
@@ -240,16 +212,16 @@ static void *thread_do_work(void *pool)
 		//sem_wait(p->sbsem,&p->sbsem_lock);
 		//if(pthread_cond_wait(&p->notify,&p->queue_lock)==EINVAL){LINE; printf("QUEUE_LOCK NOT OWNED WHEN PTHREAD_COND_WAIT IS CALLED\n"); fflush(stdout);} //Release and acquire lock
 		printf("ACQUIRED QUEUE LOCK\n"); fflush(stdout);
-		LINE;
 	//	printf("About to handle connection\n"); fflush(stdout);
-		if(p->queue!=NULL){
+	//	if(p->queue!=NULL){
 			//printf("connfd: %d\n",p->queue->connfd); fflush(stdout);
 			int* cfd = &p->queue->connfd;
+			//pool_task_t* task = p->queue;
 			p->queue = p->queue->next;
 			pthread_mutex_unlock(&p->queue_lock);
-			handle_connection(cfd,p,-1);
+			handle_connection(cfd,p);
 			pthread_mutex_lock(&p->queue_lock);
-		}
+	//	}
 		printf("Handled connection\n"); fflush(stdout);
     }
     pthread_exit(NULL);

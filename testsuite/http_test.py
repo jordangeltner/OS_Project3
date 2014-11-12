@@ -7,7 +7,6 @@ from Queue import Queue
 
 successes = Queue()
 failures = Queue()
-
 def parse_trace(tracefile='1.trace'):
     
     config = {}
@@ -50,7 +49,6 @@ def parse_trace(tracefile='1.trace'):
     return config, traces           
  
 def run_trace(config, traces, host, port):
-    
     num_threads = int(config['threads'])
     threads = []
     for i in range(num_threads):
@@ -103,19 +101,30 @@ def http_request(host, port, obj, sleeptime=0.0, method='GET', **kwargs):
 
     start = time.time()
     try:
-        conn = httplib.HTTPConnection(host, port)
-        time.sleep(sleeptime)
-        conn.request(method, obj)
+		conn = httplib.HTTPConnection(host, port)
+		time.sleep(sleeptime)
+		conn.request(method, obj)
+		response = conn.getresponse()
+# 		try:
+# 			conn.request(method, obj)
+# 		except Exception as e:
+# 			print 'HTTP Connection Error '+str(e)
+# 			input('wait')
+# 		try:
+# 			response = conn.getresponse()
+# 		except Exception as e:
+# 			print 'HTTP Connection Error '+str(e)
+		responseStr = response.read()        
+		conn.close()
 
-        response = conn.getresponse()
-        responseStr = response.read()        
-        conn.close()
-
-        responseStr = responseStr.strip()
-        
+		responseStr = responseStr.strip()
     except Exception as e:
         #HTTP Connection error
-        #print 'HTTP Connection Error', e
+        print 'HTTP Connection Error '+str(obj)
+        try:
+        	print responseStr
+        except:
+        	pass
         conn.close()
         failures.put(start)
         return False
@@ -165,7 +174,7 @@ def analyze_trace():
     total = len(suc) + len(fail)
     
     print 'Total: %s'%total, 'Success: %s'%len(suc), 'Fail: %s'%len(fail)
-
+	
     suc.sort(key=lambda x: x[0])
     
     total_dur = 0.0
@@ -190,8 +199,6 @@ if __name__ == '__main__':
     host = sys.argv[1]
     port = sys.argv[2]
     tracefile = sys.argv[3]
-
-
 
     config, traces = parse_trace(tracefile)
     

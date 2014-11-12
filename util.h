@@ -9,14 +9,23 @@
 #define NUM_SEATS 20 //CHECK WITH PIAZZA
 #define LINE printf("LINE: %d\n", __LINE__)
 
+
+
 typedef struct m_sem_t {
     int value;
 } m_sem_t;
+
 
 typedef struct pool_task_t {
     int seat_id;
     int connfd;
     void *next; //Used to link up queue
+//     int priority;
+//     int user_id;
+//     char* buf;
+//     char* file;
+//     char* resource;
+//     int length;
 } pool_task_t;
 
 typedef struct pool_t {
@@ -44,7 +53,9 @@ typedef struct pool_t {
 } pool_t;
 
 //int seat_connection(int*);
-void handle_connection(int*,pool_t*,int);
+//void handle_connection(int*,pool_t*,int);
+void handle_connection(int*,pool_t*);
+//void load_connection(int*,pool_task_t*);
 int sem_wait(m_sem_t *s, pthread_mutex_t*);
 int sem_wait_check(m_sem_t *s, pthread_mutex_t*);
 int sem_post(m_sem_t *s, pool_t* p, int notify, pthread_mutex_t*);

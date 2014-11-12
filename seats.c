@@ -4,21 +4,32 @@
 
 #include "seats.h"
 
+
 seat_t* seat_header = NULL;
 
 char seat_state_to_char(seat_state_t);
 
-void list_seats(char* buf, int bufsize)
+void list_seats(char* buf, int bufsize, pool_t* p)
 {
     seat_t* curr = seat_header;
     int index = 0;
+    int i = 0;
     while(curr != NULL && index < bufsize+ strlen("%d %c,"))
     {
-        int length = snprintf(buf+index, bufsize-index, 
-                "%d %c,", curr->id, seat_state_to_char(curr->state));
+    	int length;
+    	if(pthread_mutex_trylock(&p->seat_locks[i])==0){
+			length = snprintf(buf+index, bufsize-index, 
+					"%d %c,", curr->id, seat_state_to_char(curr->state));
+			pthread_mutex_unlock(&p->seat_locks[i]);
+		}
+		else{
+			length = snprintf(buf+index, bufsize-index, 
+					"%d P,", curr->id);
+		}
         if (length > 0)
             index = index + length;
         curr = curr->next;
+        i++;
     }
     if (index > 0)
         snprintf(buf+index-1, bufsize-index-1, "\n");
@@ -74,7 +85,6 @@ void confirm_seat(char* buf, int bufsize, int seat_id, int customer_id, int cust
             {
                 snprintf(buf, bufsize, "No pending request\n\n");
             }
-
             return;
         }
         curr = curr->next;

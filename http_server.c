@@ -15,7 +15,7 @@
 #include "seats.h"
 #include "util.h"
 
-#define BUFSIZE 1024
+#define BUFSIZE 8192
 #define FILENAMESIZE 100
 #define TASK_QUEUE_LIMIT 60   //What is the best value here?
 

@@ -38,9 +38,6 @@ pool_t *pool_create(int queue_size, int num_threads)
 	pthread_mutex_t c;
 	pthread_mutex_init(&c,&errattr);
 	p->cancellock = c;
-	pthread_mutex_t d;
-	pthread_mutex_init(&d,&errattr);
-	p->try_sblock = d;
 	int i;
 	pthread_t threads[num_threads];
 	pthread_mutex_init(&q,&errattr);
@@ -53,12 +50,8 @@ pool_t *pool_create(int queue_size, int num_threads)
 	pthread_cond_t notify;
 	pthread_cond_init(&notify,NULL);
 	p->notify = notify;
-	pthread_cond_t task_notify;
-	pthread_cond_init(&task_notify,NULL);
-	p->notify = task_notify;
 	p->queue = NULL;
 	p->standbylist = NULL;
-	p->trystandbylist = 0;
 	pthread_mutex_t sblock;
 	pthread_mutex_init(&sblock,&errattr);
 	pthread_mutex_t sbsem_lock;
@@ -70,9 +63,6 @@ pool_t *pool_create(int queue_size, int num_threads)
 	p->sbsem_lock = sbsem_lock;
 	p->seatsem_lock = seatsem_lock;
 	p->threadsem_lock = threadsem_lock;
-	pthread_cond_t sbnotify;
-	pthread_cond_init(&sbnotify,NULL);
-	p->sbnotify = sbnotify;
 	p->sblock = sblock;
 	m_sem_t* sbsem = malloc(sizeof(m_sem_t));
 	sbsem->value = 8;
@@ -83,8 +73,6 @@ pool_t *pool_create(int queue_size, int num_threads)
 	m_sem_t* threadsem = malloc(sizeof(m_sem_t));
 	threadsem->value = 0;
 	p->threadsem = threadsem;
-	p->thread_count = num_threads;
-	p->task_queue_size_limit = queue_size;
 	for (i=0;i<num_threads;i++){
 		pthread_create(&threads[i],NULL,thread_do_work,p);
 	}
@@ -151,11 +139,8 @@ int pool_destroy(pool_t *pool)
  		err+=pthread_mutex_destroy(&pool->seat_locks[i]);
  	}
  	err+= pthread_cond_destroy(&pool->notify);
- 	err+= pthread_cond_destroy(&pool->sbnotify);
- 	err+= pthread_cond_destroy(&pool->task_notify);
  	err+= pthread_mutex_destroy(&pool->sblock);
  	err+= pthread_mutex_destroy(&pool->cancellock);
- 	err+= pthread_mutex_destroy(&pool->try_sblock);
  	err+= pthread_mutex_destroy(&pool->seatsem_lock);
  	err+= pthread_mutex_destroy(&pool->sbsem_lock);
  	err+= pthread_mutex_destroy(&pool->threadsem_lock);

@@ -38,11 +38,6 @@ int main(int argc,char *argv[])
     {
         num_seats = atoi(argv[1]);
     } 
- //   int i;
-//     FILE *ofp;
-//     char outputFileName[] = "out.list";
-//     ofp = fopen(outputFileName,"w");
-//    for (i=0;i<argc;i++){ printf("arg[%d]: %s\n",i,argv[i]); fflush(stdout); }
 
     if (server_port < 1500)
     {
@@ -86,34 +81,12 @@ int main(int argc,char *argv[])
 
     // listen for incoming requests
     listen(listenfd, 10);
-    
-// 	int start = time.time();
 	
     // handle connections loop (forever)
     while(1)
     {
-//     	int end = time.time();
-//     	int spaces = 0;
-//     	if((end-start)>10){
-//     		pthread_mutex_lock(&threadpool->sblock);
-//     		pool_task_t* curr = threadpool->standbylist;
-//     		while(curr!=NULL){
-//     			load_connection(curr,threadpool);
-//     			curr = curr->next;
-//     			spaces++;
-//     		}
-//     		threadpool->standbylist = NULL;
-//     		pthread_mutex_unlock(&threadpool->sblock);
-//     		int i;
-//     		for(i=0;i<spaces;i++){
-//     			sem_post(threadpool->sbsem,&threadpool->sbsem_lock);
-//     		}
-//     		start = time.time();
-//     	}
 		connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-		printf("Adding task\n"); fflush(stdout);
 		pool_add_task(threadpool,connfd);
-		printf("Added task\n"); fflush(stdout);
     }
 }
 

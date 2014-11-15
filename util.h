@@ -68,9 +68,7 @@ typedef struct pool_t {
   pthread_t sbtid;
 } pool_t;
 
-//int seat_connection(int*);
 void setup_connection(int*,pool_t*,pool_task_t*);
-//void handle_connection(int*,pool_t*);
 void load_connection(pool_task_t*,pool_t*);
 int sem_wait(m_sem_t *s, pthread_mutex_t*);
 int sem_wait_check(m_sem_t *s, pthread_mutex_t*);

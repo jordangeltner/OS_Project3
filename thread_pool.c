@@ -114,7 +114,7 @@ int pool_add_task(pool_t *pool, int connfd)
 		task->priority = 3;
 	}
 	pthread_mutex_lock(&pool->queue_lock);
-// 	printf("ACQUIRED QUEUE LOCK\n"); LINE; fflush(stdout);
+ 	printf("ACQUIRED QUEUE LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 	pool_task_t* curr = pool->queue;
 	pool_task_t* prev = NULL;
 	while(curr!=NULL){
@@ -131,8 +131,8 @@ int pool_add_task(pool_t *pool, int connfd)
 	//UNLOCK THE QUEUE
 	pthread_mutex_unlock(&pool->queue_lock);
 	//Signal the waiting thread
-//	printf("RELEASED QUEUE LOCK\n"); fflush(stdout);
-	while(sem_wait(pool->threadsem,&pool->threadsem_lock)==-1){usleep(100);}
+	printf("RELEASED QUEUE LOCK %d\n",pthread_self()); fflush(stdout);
+	while(sem_wait(pool->threadsem,&pool->threadsem_lock)==-1){LINE; usleep(100);}
 	pthread_cond_signal(&pool->notify);
 
     return err;
@@ -189,15 +189,16 @@ int pool_destroy(pool_t *pool)
 static void *thread_do_work(void *pool)
 { 
 	pool_t* p = (pool_t*)pool;
-	if(pthread_mutex_lock(&p->queue_lock)==EDEADLK){LINE; printf("DEADLOCKED QUEUE_LOCK\n"); fflush(stdout);}
+	if(pthread_mutex_lock(&p->queue_lock)==EDEADLK){LINE; printf("DEADLOCKED QUEUE_LOCK %d\n",pthread_self()); fflush(stdout);}
     while(p->active ==1) {
 		
 		if(p->sbtid==pthread_self()){
 			pthread_mutex_unlock(&p->queue_lock);
+			printf("RELEASED QUEUE LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 			//look for matching task in standbylist
 			LINE;
 			pthread_mutex_lock(&p->sblock);
-			printf("ACQUIRED STANDBY LOCK\n"); LINE; fflush(stdout);
+			printf("ACQUIRED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 			pool_task_t* task = p->standbylist;
 			pool_task_t* prev = NULL;
 			while(task!=NULL){
@@ -209,7 +210,7 @@ static void *thread_do_work(void *pool)
 						p->standbylist = task->next;
 					}
 					pthread_mutex_unlock(&p->sblock);
-					printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+					printf("RELEASED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 					sem_post(p->sbsem,&p->sbsem_lock);
 					p->last_cancelled = -1;
 					p->sbtid = 0;
@@ -222,21 +223,21 @@ static void *thread_do_work(void *pool)
 			}
 			if(task==NULL){
 				pthread_mutex_unlock(&p->sblock);
-				printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+				printf("RELEASED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 				p->last_cancelled = -1;
 				p->sbtid = 0;
 				pthread_mutex_unlock(&p->cancellock);
 			}
 			LINE;
 			pthread_mutex_lock(&p->queue_lock);
-			LINE;
+			printf("ACQUIRED QUEUE LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 		}
-		printf("RELEASING QUEUE LOCK\n"); fflush(stdout);
+		printf("RELEASING QUEUE LOCK %d\n",pthread_self()); fflush(stdout);
 		sem_post(p->threadsem,&p->threadsem_lock);
 		pthread_cond_wait(&p->notify,&p->queue_lock);
 		//sem_wait(p->sbsem,&p->sbsem_lock);
 		//if(pthread_cond_wait(&p->notify,&p->queue_lock)==EINVAL){LINE; printf("QUEUE_LOCK NOT OWNED WHEN PTHREAD_COND_WAIT IS CALLED\n"); fflush(stdout);} //Release and acquire lock
-		printf("ACQUIRED QUEUE LOCK\n"); fflush(stdout);
+		printf("ACQUIRED QUEUE LOCK %d\n",pthread_self()); fflush(stdout);
 		pool_task_t* curr = p->queue;
 		pool_task_t* best = curr;
 		pool_task_t* prev = NULL;
@@ -256,9 +257,11 @@ static void *thread_do_work(void *pool)
 			bestprev->next = best->next;
 		}
 		pthread_mutex_unlock(&p->queue_lock);
+		printf("RELEASED QUEUE LOCK %d\n", pthread_self()); LINE; fflush(stdout);
 		//handle_connection(cfd,p);
 		load_connection(best,p);
 		pthread_mutex_lock(&p->queue_lock);
+		printf("ACQUIRED QUEUE LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 		printf("Handled connection\n"); fflush(stdout);
     }
     pthread_exit(NULL);

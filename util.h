@@ -75,6 +75,7 @@ void load_connection(pool_task_t*,pool_t*);
 int sem_wait(m_sem_t *s, pthread_mutex_t*);
 int sem_wait_check(m_sem_t *s, pthread_mutex_t*);
 int sem_post(m_sem_t *s,pthread_mutex_t*);
+seat_t * get_seat(int);
 
 
 

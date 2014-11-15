@@ -300,11 +300,12 @@ void load_connection(pool_task_t* task, pool_t* p)
 		}
 		else{
 			//space is available on standbylist
+			seat_t* seat = get_seat(seat_id);
 			LINE;
-			if(sem_wait(p->sbsem,&p->sbsem_lock)!=-1){
+			if(sem_wait(p->sbsem,&p->sbsem_lock)!=-1 && seat->state==PENDING){
 				LINE;
 				pthread_mutex_lock(&p->sblock);
-				printf("ACQUIRED STANDBY LOCK\n"); LINE; fflush(stdout);
+				printf("ACQUIRED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 				pool_task_t* prev = NULL;
 				pool_task_t* curr = p->standbylist;
 				while(curr!=NULL){
@@ -317,8 +318,9 @@ void load_connection(pool_task_t* task, pool_t* p)
 				else{
 					p->standbylist = task;
 				}
+				task->next = NULL;
 				pthread_mutex_unlock(&p->sblock);
-				printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+				printf("RELEASED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
 				return;
 			}
 			//no space available on standbylist
@@ -343,24 +345,25 @@ void load_connection(pool_task_t* task, pool_t* p)
         writenbytes(connfd, buf, strlen(buf));
         LINE;
         pthread_mutex_lock(&p->sblock);
-        printf("ACQUIRED STANDBY LOCK\n"); LINE; fflush(stdout);
+        printf("ACQUIRED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
         pool_task_t* curr = p->standbylist;
         pool_task_t* prev = NULL;
+        int spaces = 0;
         while(curr!=NULL){
         	if(curr->seat_id==seat_id){
+        		spaces++;
         		if(prev==NULL){
         			p->standbylist = p->standbylist->next;
         		}
         		else{
         			prev->next = curr->next;
         		}
-//         		pthread_mutex_unlock(&p->sblock);
-//         		printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
-        		sem_post(p->sbsem,&p->sbsem_lock);
+        		pthread_mutex_unlock(&p->sblock);
+        		printf("RELEASED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
         		load_connection(curr,p);
         		LINE;
-//         		pthread_mutex_lock(&p->sblock);
-//         		printf("ACQUIRED STANDBY LOCK\n"); LINE; fflush(stdout);
+        		pthread_mutex_lock(&p->sblock);
+        		printf("ACQUIRED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
         	}
         	else{
         		prev = curr;
@@ -368,7 +371,11 @@ void load_connection(pool_task_t* task, pool_t* p)
         	curr = curr->next;
         }
         pthread_mutex_unlock(&p->sblock);
-		printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+        printf("RELEASED STANDBY LOCK %d\n",pthread_self()); LINE; fflush(stdout);
+        int i;
+        for(i=0;i<spaces;i++){
+        	sem_post(p->sbsem,&p->sbsem_lock);
+        }
     }
     else if(strncmp(resource, "cancel", length) == 0)
     {

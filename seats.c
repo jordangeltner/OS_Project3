@@ -176,3 +176,15 @@ char seat_state_to_char(seat_state_t state)
 
     return '?';
 }
+
+seat_t * get_seat(int seat_id){
+	seat_t* curr = seat_header;
+	while (curr != NULL){
+		if (curr->id = seat_id){
+			return curr;
+		}
+		curr = curr->next;
+	}
+	return NULL;
+}
+

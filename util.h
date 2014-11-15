@@ -10,6 +10,20 @@
 #define LINE printf("LINE: %d\n", __LINE__)
 #define BUFSIZE 8192
 
+typedef enum 
+{
+    AVAILABLE, 
+    PENDING, 
+    OCCUPIED
+} seat_state_t;
+
+typedef struct seat_struct
+{
+    int id;
+    int customer_id;
+    seat_state_t state;
+    struct seat_struct* next;
+} seat_t;
 
 typedef struct m_sem_t {
     int value;
@@ -51,15 +65,16 @@ typedef struct pool_t {
   int thread_count;
   int task_queue_size_limit;
   int active;
+  pthread_t sbtid;
 } pool_t;
 
 //int seat_connection(int*);
 void setup_connection(int*,pool_t*,pool_task_t*);
-void handle_connection(int*,pool_t*);
+//void handle_connection(int*,pool_t*);
 void load_connection(pool_task_t*,pool_t*);
 int sem_wait(m_sem_t *s, pthread_mutex_t*);
 int sem_wait_check(m_sem_t *s, pthread_mutex_t*);
-int sem_post(m_sem_t *s, pool_t* p, int notify, pthread_mutex_t*);
+int sem_post(m_sem_t *s,pthread_mutex_t*);
 
 
 

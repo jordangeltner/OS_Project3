@@ -75,7 +75,7 @@ pool_t *pool_create(int queue_size, int num_threads)
 	p->sbnotify = sbnotify;
 	p->sblock = sblock;
 	m_sem_t* sbsem = malloc(sizeof(m_sem_t));
-	sbsem->value = 0;
+	sbsem->value = 8;
 	p->sbsem = sbsem;
 	m_sem_t* seatsem = malloc(sizeof(m_sem_t));
 	seatsem->value = 20;
@@ -89,6 +89,9 @@ pool_t *pool_create(int queue_size, int num_threads)
 		pthread_create(&threads[i],NULL,thread_do_work,p);
 	}
 	p->threads = threads;
+	pthread_t sbtid = 0;
+	p->sbtid = sbtid;
+	
     return p;
 }
 
@@ -188,34 +191,48 @@ static void *thread_do_work(void *pool)
 	pool_t* p = (pool_t*)pool;
 	if(pthread_mutex_lock(&p->queue_lock)==EDEADLK){LINE; printf("DEADLOCKED QUEUE_LOCK\n"); fflush(stdout);}
     while(p->active ==1) {
-//    	tstr = 0;
-    	//need to try standby list, because someone just cancelled
-//    	if(pthread_mutex_trylock(&p->try_sblock)==0){
-//     		if(p->trystandbylist==1){
-//     			tstr = -1;
-// 				p->trystandbylist = 0;
-// 				pthread_mutex_unlock(&p->try_sblock);
-// 				printf("IN STANDBY LIST\n"); fflush(stdout);
-// 				if(pthread_mutex_lock(&p->sblock)==EDEADLK){LINE; printf("DEADLOCKED SBLOCK\n"); fflush(stdout);}
-// 			
-// 				LINE;
-// 				pool_task_t* curr = p->standbylist;
-// 				if(curr!=NULL){
-// 					LINE;
-// 					handle_connection(&curr->connfd,p,p->last_cancelled);
-// 					p->standbylist = p->standbylist->next;
-// 					sem_post(p->sbsem,p,1,&p->sbsem_lock);
-// 				}
-// 				printf("LEAVING STANDBY LIST\n"); fflush(stdout);
-// 				pthread_mutex_unlock(&p->sblock);
-// 			}
-// 			pthread_mutex_unlock(&p->try_sblock);
-//    	}
-//    	else{ pthread_mutex_unlock(&p->try_sblock); }
-//     	if(tstr==0){
-//     		LINE;
+		
+		if(p->sbtid==pthread_self()){
+			pthread_mutex_unlock(&p->queue_lock);
+			//look for matching task in standbylist
+			LINE;
+			pthread_mutex_lock(&p->sblock);
+			printf("ACQUIRED STANDBY LOCK\n"); LINE; fflush(stdout);
+			pool_task_t* task = p->standbylist;
+			pool_task_t* prev = NULL;
+			while(task!=NULL){
+				if(task->seat_id==p->last_cancelled){
+					if(prev!=NULL){
+						prev->next = task->next;
+					}
+					else{
+						p->standbylist = task->next;
+					}
+					pthread_mutex_unlock(&p->sblock);
+					printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+					sem_post(p->sbsem,&p->sbsem_lock);
+					p->last_cancelled = -1;
+					p->sbtid = 0;
+					pthread_mutex_unlock(&p->cancellock);
+					load_connection(task,p);
+					break;
+				}
+				prev = task;
+				task = task->next;
+			}
+			if(task==NULL){
+				pthread_mutex_unlock(&p->sblock);
+				printf("RELEASED STANDBY LOCK\n"); LINE; fflush(stdout);
+				p->last_cancelled = -1;
+				p->sbtid = 0;
+				pthread_mutex_unlock(&p->cancellock);
+			}
+			LINE;
+			pthread_mutex_lock(&p->queue_lock);
+			LINE;
+		}
 		printf("RELEASING QUEUE LOCK\n"); fflush(stdout);
-		sem_post(p->threadsem,p,1,&p->threadsem_lock);
+		sem_post(p->threadsem,&p->threadsem_lock);
 		pthread_cond_wait(&p->notify,&p->queue_lock);
 		//sem_wait(p->sbsem,&p->sbsem_lock);
 		//if(pthread_cond_wait(&p->notify,&p->queue_lock)==EINVAL){LINE; printf("QUEUE_LOCK NOT OWNED WHEN PTHREAD_COND_WAIT IS CALLED\n"); fflush(stdout);} //Release and acquire lock

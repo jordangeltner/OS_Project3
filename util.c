@@ -16,7 +16,6 @@
 #include "seats.h"
 
 
-#define BUFSIZE 8192
 
 int writenbytes(int,char *,int);
 int readnbytes(int,char *,int);
@@ -135,6 +134,231 @@ int parse_int_arg(char* filename, char* arg)
 }
 
 
+void setup_connection(int* connfd_ptr, pool_t* p, pool_task_t* task)
+{
+    int connfd = *(connfd_ptr);
+    int fd;
+    char buf[BUFSIZE+1];
+    char instr[20];
+    char file[100];
+    char type[20];
+
+    int i=0;
+    int j=0;
+
+    char *ok_response = "HTTP/1.0 200 OK\r\n"\
+                           "Content-type: text/html\r\n\r\n";
+
+    char *notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"\
+                            "Content-type: text/html\r\n\r\n"\
+                            "<html><body bgColor=white text=black>\n"\
+                            "<h2>404 FILE NOT FOUND</h2>\n"\
+                            "</body></html>\n";
+
+    char *bad_request = "HTTP/1.0 400 BAD REQUEST\r\n"\
+                              "Content-type: text/html\r\n\r\n"\
+                              "<html><body><h2>BAD REQUEST</h2>"\
+                              "</body></html>\n";
+                              
+
+    // first read loop -- get request and headers
+
+    // parse request to get file name
+    // Assumption: this is a GET request and filename contains no spaces
+    // parse request
+    // get headers
+
+    //Expection Format: 'GET filenane.txt HTTP/1.X'
+    get_line(connfd, buf, BUFSIZE);
+    //parse out instruction
+    while( !isspace(buf[j]) && (i < sizeof(instr) - 1))
+    {
+        instr[i] = buf[i];
+        i++;
+        j++;
+    }
+    j+=2;
+    instr[i] = '\0';
+
+
+    //Only accept GET requests
+    if (strncmp(instr, "GET", 3) != 0) {
+        writenbytes(connfd, bad_request, strlen(bad_request));
+        close(connfd);
+        task = NULL;
+        return;
+    }
+
+    //parse out filename
+    i=0;
+    while (!isspace(buf[j]) && (i < sizeof(file) - 1))
+    {
+        file[i] = buf[j];
+        i++;
+        j++;
+    }
+    j++;
+    file[i] = '\0';
+
+    //parse out type
+    i=0;
+    while (!isspace(buf[j]) && (buf[j] != '\0') && (i < sizeof(type) - 1))
+    {
+        type[i] = buf[j];
+        i++;
+        j++;
+    }
+    type[i] = '\0';
+
+    while (get_line(connfd, buf, BUFSIZE) > 0)
+    {
+        //ignore headers -> (for now)
+    }
+
+    int length;
+    for(i = 0; i < strlen(file); i++)
+    {
+        if(file[i] == '?')
+            break;
+    }
+    length = i;
+    
+    char resource[length+1];
+
+    if (length > strlen(file)) {
+      length = strlen(file);
+    }
+    strncpy(resource, file, length);
+    resource[length] = 0;
+    int seat_id = parse_int_arg(file, "seat=");
+    int user_id = parse_int_arg(file, "user=");
+    int customer_priority = parse_int_arg(file, "priority=");
+    task->seat_id = seat_id;
+    task->user_id = user_id;
+    task->priority = customer_priority;
+    task->connfd = connfd;
+    task->next = NULL;
+    task->length = length;
+    strncpy(task->buf,buf,BUFSIZE+1);
+    strncpy(task->resource,resource,101);
+    return;
+}
+
+
+void load_connection(pool_task_t* task, pool_t* p)
+{	
+	int seat_id = task->seat_id;
+	int connfd = task->connfd;
+	int customer_priority = task->priority;
+	int user_id = task->user_id;
+	int length = task->length;
+	char* buf = task->buf;
+	char* resource = task->resource;
+	int fd;
+    char *ok_response = "HTTP/1.0 200 OK\r\n"\
+                           "Content-type: text/html\r\n\r\n";
+
+    char *notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"\
+                            "Content-type: text/html\r\n\r\n"\
+                            "<html><body bgColor=white text=black>\n"\
+                            "<h2>404 FILE NOT FOUND</h2>\n"\
+                            "</body></html>\n";
+
+    char *bad_request = "HTTP/1.0 400 BAD REQUEST\r\n"\
+                              "Content-type: text/html\r\n\r\n"\
+                              "<html><body><h2>BAD REQUEST</h2>"\
+                              "</body></html>\n";
+                              
+    if (strncmp(resource, "list_seats", length) == 0)
+    {  
+    	printf("List seats\n"); fflush(stdout);
+        list_seats(buf, BUFSIZE, p);
+        // send headers
+        writenbytes(connfd, ok_response, strlen(ok_response));
+        // send data
+        writenbytes(connfd, buf, strlen(buf));
+    } 
+    else if(strncmp(resource, "view_seat", length) == 0)
+    {	
+    	printf("View seat: %d\n", seat_id); fflush(stdout);
+    	if(sem_wait(p->seatsem,&p->seatsem_lock)!=-1){
+    		if(seat_id<20 && seat_id>-1){  		
+    			pthread_mutex_lock(&p->seat_locks[seat_id]);
+    		}
+    		printf("Viewing seat %d\n",seat_id); fflush(stdout);
+			view_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
+			// send headers
+			writenbytes(connfd, ok_response, strlen(ok_response));
+			// send data
+			writenbytes(connfd, buf, strlen(buf));
+			if(seat_id<20 && seat_id>-1){
+				pthread_mutex_unlock(&p->seat_locks[seat_id]);
+			}
+		}
+		else{
+			snprintf(buf, BUFSIZE, "Seat unavailable\n\n");
+			writenbytes(connfd, ok_response, strlen(ok_response));
+			writenbytes(connfd, buf, strlen(buf));
+		}
+    } 
+    else if(strncmp(resource, "confirm", length) == 0)
+    {
+    	printf("Confirm seat: %d\n", seat_id); fflush(stdout);
+    	pthread_mutex_lock(&p->seat_locks[seat_id]);
+        confirm_seat(buf, BUFSIZE, seat_id, user_id, customer_priority);
+        // send headers
+        writenbytes(connfd, ok_response, strlen(ok_response));
+        // send data
+        writenbytes(connfd, buf, strlen(buf));
+        pthread_mutex_unlock(&p->seat_locks[seat_id]);
+    }
+    else if(strncmp(resource, "cancel", length) == 0)
+    {
+    	printf("Cancel seat: %d\n", seat_id); fflush(stdout);
+    	if(pthread_mutex_lock(&p->seat_locks[seat_id])==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+    	LINE;
+//     	if(pthread_mutex_lock(&p->cancellock)==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+//     	LINE;
+//     	if(pthread_mutex_lock(&p->try_sblock)==EDEADLK){ printf("DEADLOCKED THREAD\n"); fflush(stdout);}
+//         LINE;
+        cancel(buf, BUFSIZE, seat_id, user_id, customer_priority);
+        // send headers
+        writenbytes(connfd, ok_response, strlen(ok_response));
+        // send data
+        writenbytes(connfd, buf, strlen(buf));
+        p->last_cancelled = seat_id;
+        p->trystandbylist = 1;
+        
+//         pthread_mutex_unlock(&p->try_sblock);
+//         pthread_mutex_unlock(&p->cancellock);
+        pthread_mutex_unlock(&p->seat_locks[seat_id]);
+        //pthread_mutex_unlock(&p->queue_lock);
+        //pthread_cond_signal(&p->notify);
+        sem_post(p->seatsem,p,0,&p->seatsem_lock);
+    }
+    else
+    {
+    	printf("OPENING FILE: %s\n", resource); fflush(stdout);
+        // try to open the file
+        if ((fd = open(resource, O_RDONLY)) == -1)
+        {
+            writenbytes(connfd, notok_response, strlen(notok_response));
+        } 
+        else
+        {
+            // send headers
+            writenbytes(connfd, ok_response, strlen(ok_response));
+            // send file
+            int ret;
+            while ( (ret = read(fd, buf, BUFSIZE)) > 0) {
+                writenbytes(connfd, buf, ret);
+            }  
+            // close file and free space
+            close(fd);
+        } 
+    }
+    close(connfd);
+}
 
 
 void handle_connection(int* connfd_ptr, pool_t* p)

@@ -65,8 +65,11 @@ pool_t *pool_create(int queue_size, int num_threads)
 	pthread_mutex_init(&sbsem_lock,&errattr);
   	pthread_mutex_t seatsem_lock;
   	pthread_mutex_init(&seatsem_lock,&errattr);
+  	pthread_mutex_t threadsem_lock;
+  	pthread_mutex_init(&threadsem_lock,&errattr);
 	p->sbsem_lock = sbsem_lock;
 	p->seatsem_lock = seatsem_lock;
+	p->threadsem_lock = threadsem_lock;
 	pthread_cond_t sbnotify;
 	pthread_cond_init(&sbnotify,NULL);
 	p->sbnotify = sbnotify;
@@ -77,6 +80,9 @@ pool_t *pool_create(int queue_size, int num_threads)
 	m_sem_t* seatsem = malloc(sizeof(m_sem_t));
 	seatsem->value = 20;
 	p->seatsem = seatsem;
+	m_sem_t* threadsem = malloc(sizeof(m_sem_t));
+	threadsem->value = 0;
+	p->threadsem = threadsem;
 	p->thread_count = num_threads;
 	p->task_queue_size_limit = queue_size;
 	for (i=0;i<num_threads;i++){
@@ -97,13 +103,13 @@ int pool_add_task(pool_t *pool, int connfd)
 	// multi threaded
 	//add connection to pool queue
 	pool_task_t* task = (pool_task_t*)malloc(sizeof(pool_task_t));
-	
-//	load_connection(&connfd,task);
-	task->connfd = connfd;
-//	task->priority = 1;
-	task->seat_id = -1;
-	task->next = NULL;
-
+	setup_connection(&connfd,pool,task);
+	if(task==NULL){
+		return err;
+	}
+	if(task->priority<1 || task->priority >3){
+		task->priority = 3;
+	}
 	pthread_mutex_lock(&pool->queue_lock);
 // 	printf("ACQUIRED QUEUE LOCK\n"); LINE; fflush(stdout);
 	pool_task_t* curr = pool->queue;
@@ -123,7 +129,7 @@ int pool_add_task(pool_t *pool, int connfd)
 	pthread_mutex_unlock(&pool->queue_lock);
 	//Signal the waiting thread
 //	printf("RELEASED QUEUE LOCK\n"); fflush(stdout);
-	while(sem_wait(pool->sbsem,&pool->sbsem_lock)==-1){usleep(100);}
+	while(sem_wait(pool->threadsem,&pool->threadsem_lock)==-1){usleep(100);}
 	pthread_cond_signal(&pool->notify);
 
     return err;
@@ -151,8 +157,10 @@ int pool_destroy(pool_t *pool)
  	err+= pthread_mutex_destroy(&pool->try_sblock);
  	err+= pthread_mutex_destroy(&pool->seatsem_lock);
  	err+= pthread_mutex_destroy(&pool->sbsem_lock);
+ 	err+= pthread_mutex_destroy(&pool->threadsem_lock);
  	free(pool->sbsem);
  	free(pool->seatsem);
+ 	free(pool->threadsem);
  	pool_task_t* q = pool->queue;
  	while(q!=NULL){
  		pool_task_t* curr = q;
@@ -207,21 +215,33 @@ static void *thread_do_work(void *pool)
 //     	if(tstr==0){
 //     		LINE;
 		printf("RELEASING QUEUE LOCK\n"); fflush(stdout);
-		sem_post(p->sbsem,p,1,&p->sbsem_lock);
+		sem_post(p->threadsem,p,1,&p->threadsem_lock);
 		pthread_cond_wait(&p->notify,&p->queue_lock);
 		//sem_wait(p->sbsem,&p->sbsem_lock);
 		//if(pthread_cond_wait(&p->notify,&p->queue_lock)==EINVAL){LINE; printf("QUEUE_LOCK NOT OWNED WHEN PTHREAD_COND_WAIT IS CALLED\n"); fflush(stdout);} //Release and acquire lock
 		printf("ACQUIRED QUEUE LOCK\n"); fflush(stdout);
-	//	printf("About to handle connection\n"); fflush(stdout);
-	//	if(p->queue!=NULL){
-			//printf("connfd: %d\n",p->queue->connfd); fflush(stdout);
-			int* cfd = &p->queue->connfd;
-			//pool_task_t* task = p->queue;
+		pool_task_t* curr = p->queue;
+		pool_task_t* best = curr;
+		pool_task_t* prev = NULL;
+		pool_task_t* bestprev = NULL;
+		while(curr!=NULL){
+			if(curr->priority < best->priority){
+				best = curr;
+				bestprev = prev;
+			}
+			prev = curr;
+			curr = curr->next;
+		}
+		if(bestprev==NULL){
 			p->queue = p->queue->next;
-			pthread_mutex_unlock(&p->queue_lock);
-			handle_connection(cfd,p);
-			pthread_mutex_lock(&p->queue_lock);
-	//	}
+		}
+		else{
+			bestprev->next = best->next;
+		}
+		pthread_mutex_unlock(&p->queue_lock);
+		//handle_connection(cfd,p);
+		load_connection(best,p);
+		pthread_mutex_lock(&p->queue_lock);
 		printf("Handled connection\n"); fflush(stdout);
     }
     pthread_exit(NULL);
